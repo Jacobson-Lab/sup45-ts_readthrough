@@ -1,0 +1,164 @@
+---
+title: "Figure4C-D"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Plot Figure 4C-D: Random forest feature importance
+
+```{r}
+library(dplyr)
+```
+
+Read file, either IncMSE or MDA
+```{r}
+Imp_measurement <- "%IncMSE" # specify what is being plotted and the name of the plot's color bar
+all.imp_df <- read.table("../Data/Data_Figure4C_IncMSE.txt", header = TRUE)
+
+# Filter table for relevant information
+all.imp_df <- all.imp_df[, c("sample", "feature", "X.IncMSE")]
+#all.imp_df <- all.imp_df[, c("sample", "feature", "MeanDecreaseAccuracy")]
+
+# Re-name %IncMSE or MeanDecreaseAccuracy column to Imp for convenience
+names(all.imp_df)[3] <- "Imp"
+
+# Re-name samples
+all.imp_df$sample <- recode_factor(all.imp_df$sample, sup45_wt_25C = "SUP45, 25 °C", sup45_wt_37C = "SUP45, 37 °C", sup45_wt = "SUP45-D", rli1_wt = "RLI1-D", sup45_ts_25C = "sup45-ts, 25 °C", sup45_ts_37C = "sup45-ts, 37 °C", sup45_d = "sup45-d", rli1_d = "rli1-d")
+```
+
+### Hierarchical clustering
+From https://stackoverflow.com/questions/42047896/joining-a-dendrogram-and-a-heatmap
+```{r}
+library(ggplot2)
+library(dendextend)
+library(ggdendro)
+```
+
+Dendogram plotting information
+```{r}
+# Prepare data for clustering
+all.imp_hclust <- reshape2::dcast(all.imp_df, feature ~ sample, value.var = "Imp")
+all.imp_hclust <- all.imp_hclust[, -1]
+
+# Obtain the dendrogram
+h <- as.dendrogram(hclust(dist(t(all.imp_hclust))))
+dend_data <- dendro_data(h)
+
+# # Setup the data, so that the layout is inverted (this is more "clear" than simply using coord_flip())
+segment_data <- with(segment(dend_data), data.frame(x = y, y = x, xend = yend, yend = xend))
+
+# Use the dendrogram label data to position the sample labels
+samp_pos_table <- with(dend_data$labels, data.frame(y_center = x, sample = as.character(label), height = 1))
+
+# Limits for the vertical axes
+samp_coord_limits <- with(samp_pos_table, c(min(y_center - 0.5 * height), max(y_center + 0.5 * height))) + 0.1 * c(-1, 1) # extra spacing: 0.1
+samp_axis_limits <- samp_coord_limits
+samp_axis_limits[2] <- 12 # expand limit for nascent peptide label. Should be higher than y value in txt (below)
+```
+
+Plot dendogram
+```{r}
+plt_dendr <- ggplot(segment_data) + 
+    geom_segment(aes(x = x, y = y, xend = xend, yend = yend)) + 
+    scale_x_reverse(expand = c(0, 0.5)) + 
+    scale_y_continuous(breaks = samp_pos_table$y_center, 
+                       labels = samp_pos_table$sample, 
+                       limits = samp_axis_limits, 
+                       expand = c(0, 0)
+                       ) + 
+    labs(x = "", y = "", colour = "", size = "") +
+    coord_cartesian(ylim = samp_coord_limits, clip = "off") +
+    theme_void() + 
+    theme(panel.grid = element_blank(), plot.margin = unit(c(0.1, 0, 0.1, 0.1), "cm"))
+```
+
+### Main plot
+Create labels for plotting
+```{r}
+nn = length(unique(all.imp_df$feature)) # number of features
+
+# Re-name features
+all.imp_df$xtick <- as.factor(all.imp_df$feature)
+all.imp_df$xtick <- recode_factor(all.imp_df$xtick, 
+                                  tunnel_lower_H_count = "Helical", tunnel_lower_neg_charge = "- charged", tunnel_lower_no_charge = "No charge", tunnel_lower_pos_charge = "+ charged", tunnel_lower_aromatic = "Aromatic", tunnel_lower_polar = "Polar", tunnel_lower_nonpolar = "Nonpolar", tunnel_lower_hydrophilic = "Hydrophylic", tunnel_lower_neutral = "Neutral", tunnel_lower_hydrophobic = "Hydrophobic", tunnel_lower_v_hydrophobic = "Very hydrophobic", 
+                                  tunnel_central_neg_charge = " - charged", tunnel_central_no_charge = " No charge", tunnel_central_pos_charge = " + charged", tunnel_central_aromatic = " Aromatic", tunnel_central_polar = " Polar", tunnel_central_nonpolar = " Nonpolar", tunnel_central_hydrophilic = " Hydrophylic", tunnel_central_neutral = " Neutral", tunnel_central_hydrophobic = " Hydrophobic", tunnel_central_v_hydrophobic = " Very hydrophobic",
+                                  tunnel_constriction_neg_charge = "  - charged", tunnel_constriction_no_charge = "  No charge", tunnel_constriction_pos_charge = "  + charged", tunnel_constriction_aromatic = "  Aromatic", tunnel_constriction_polar = "  Polar", tunnel_constriction_nonpolar = "  Nonpolar", tunnel_constriction_hydrophilic = "  Hydrophylic", tunnel_constriction_neutral = "  Neutral", tunnel_constriction_hydrophobic = "  Hydrophobic", tunnel_constriction_v_hydrophobic = "  Very hydrophobic",
+                                   tunnel_upper_neg_charge = "   - charged", tunnel_upper_no_charge = "   No charge", tunnel_upper_pos_charge = "   + charged", tunnel_upper_aromatic = "   Aromatic", tunnel_upper_polar = "   Polar", tunnel_upper_nonpolar = "   Nonpolar", tunnel_upper_hydrophilic = "   Hydrophylic", tunnel_upper_neutral = "   Neutral", tunnel_upper_hydrophobic = "   Hydrophobic", tunnel_upper_v_hydrophobic = "   Very hydrophobic",
+                                  aa_m02 = "E-site aa", aa_m01 = "P-site aa", nt_m18 = "-18", nt_m17 = "-17", nt_m16 = "-16", nt_m15 = "-15", nt_m14 = "-14", nt_m13 = "-13", nt_m12 = "-12", nt_m11 = "-11", nt_m10 = "-10", nt_m09 = "-9", nt_m08 = "-8", nt_m07 = "-7", nt_m06 = "-6", nt_m05 = "-5", nt_m04 = "-4", nt_m03 = "-3", nt_m02 = "-2", nt_m01 = "-1", stop_codon = "Stop codon", nt_p04 = "+4", nt_p05 = "+5", nt_p06 = "+6", nt_p07 = "+7", nt_p08 = "+8", nt_p09 = "+9", nt_p10 = "+10", nt_p11 = "+11", nt_p12 = "+12", nt_p13 = "+13", nt_p14 = "+14", nt_p15 = "+15", nt_p16 = "+16",
+                                  nis_stop = "1st 3'UTR stop", l_utr3 = "3'-UTR length", MFE = "MFE", dist_bp = "Distance from stop", random_factor = "Random factor", random_num = "Random number")
+
+# Creat group for features (for faceting)
+all.imp_df$xgroup <- NA
+all.imp_df$xgroup <- gsub("tunnel_lower_.*", "aa 20-30\nfrom PTC", all.imp_df$feature)
+all.imp_df$xgroup <- gsub("tunnel_central_.*", "aa 13-19\nfrom PTC", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("tunnel_constriction_.*", "aa 10-12\nfrom PTC", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("tunnel_upper_.*", "aa 3-9\nfrom PTC", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("aa_m.*", "", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("nt_m.*", " nt from stop ", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("stop_codon", " ", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("nt_p.*", "nt from stop", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("l_utr3", "  ", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("nis_stop", "   ", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("MFE", "2°", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("dist_bp", "2°", all.imp_df$xgroup)
+all.imp_df$xgroup <- gsub("random_.*", "NC", all.imp_df$xgroup)
+all.imp_df$xgroup <- factor(all.imp_df$xgroup, levels = c("aa 20-30\nfrom PTC", "aa 13-19\nfrom PTC", "aa 10-12\nfrom PTC", "aa 3-9\nfrom PTC", "", " nt from stop ", " ", "nt from stop", "  ", "   ", "2°", "NC"))
+```
+
+Create data to add "Nascent peptide in the exit tunnel" to plot
+```{r}
+topline <- data.frame(yint = c(rep(10.5, times = 5), rep(NA, times = 7)), 
+                      xgroup = levels(all.imp_df$xgroup))
+topline$xgroup <- factor(topline$xgroup, levels = levels(all.imp_df$xgroup))
+txt <- data.frame(x = c(rep(NA, times = 2), 1, rep(NA, times = 9)), 
+                  y = c(rep(NA, times = 2), 11, rep(NA, times = 9)), 
+                  xgroup = levels(all.imp_df$xgroup))
+txt$xgroup <- factor(txt$xgroup, levels = levels(all.imp_df$xgroup))
+```
+
+Re-order samples based on dendogram's order
+```{r}
+all.imp_df2 <- left_join(all.imp_df, samp_pos_table[, c("sample", "y_center")], by = "sample")
+all.imp_df2$sample <- factor(all.imp_df2$sample, levels = samp_pos_table$sample)
+```
+
+Plot
+```{r}
+# main plot
+p <- ggplot() +
+  geom_tile(data = all.imp_df2, mapping = aes(x = xtick, y = y_center, fill = Imp)) +
+  #geom_hline(data = topline, aes(yintercept = yint)) + 
+  #geom_text(data = txt, aes(x = x, y = y, label = c("Nascent peptide in the exit tunnel")), hjust = 0.5, size = 6.5*5/14) +
+  facet_grid(.~xgroup, scales = "free", space = "free", switch = "y") +
+  scale_fill_gradient2(name = Imp_measurement, low = "blue", mid = "white", high = "red", midpoint = 0,
+                       limits = c(-8, 8), oob = scales::squish) +
+  scale_y_continuous(breaks = samp_pos_table[, "y_center"], labels = samp_pos_table[, "sample"],
+                     limits = samp_axis_limits, expand = c(0, 0)) +
+  xlab("X variables") + ylab("") +
+  coord_cartesian(ylim = samp_coord_limits, clip = "off") +
+  theme_bw(base_size = 8) + 
+  theme(panel.grid = element_blank(), panel.spacing = unit(0, "cm"), panel.border = element_rect(colour = "black", fill = NA),
+        legend.position = "top", legend.key.width = unit(1, "cm"), legend.key.height = unit(0.25, "cm"), 
+        legend.box.spacing = unit(0.5, "cm"), legend.title.align = 0,
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), axis.text.y = element_text(face = "italic"), 
+        strip.background = element_blank(), strip.text.y = element_blank(), strip.placement = "outside",
+        plot.margin = unit(c(0.1, 0.1, 0.1, -0.3), "cm"))
+
+# Add nascent peptide label to main plot
+pp <- p + geom_hline(data = topline, aes(yintercept = yint)) +
+  geom_text(data = txt, aes(x = x, y = y, label = c("Nascent peptide in the exit tunnel")), hjust = 0.5, size = 6.5*5/14)
+```
+
+### Combine main plot and dendogram
+```{r}
+f4cd <- cowplot::plot_grid(plt_dendr, pp, align = "h", axis = "tb", rel_widths = c(0.1, 0.9))
+```
+
+Save plot
+```{r}
+ggsave(filename = "Figure4C_IncMSE.pdf", plot = f4cd, path = "../Plots", width = 7.3, height = 3, units = "in", dpi = 500)
+#ggsave(filename = "Figure4D_MDA.pdf", plot = f4cd, path = "../Plots", width = 7.3, height = 3, units = "in", dpi = 500)
+```
