@@ -1,9 +1,10 @@
 # sup45-ts_readthrough
 Analysis pipeline, codes, and processed data for Mangkalaphiban et al.<br/>
-DOI: [pending]
+DOI: [pending]<br/>
 Preprint: https://doi.org/10.1101/2020.12.15.422930<br/>
 
-Raw sequencing data generated in this study are deposited deposited and available at Gene Expression Omnibus (GEO) under accession number GSE162780.<br/>
+Raw sequencing data generated in this study are deposited and available at Gene Expression Omnibus (GEO) under accession number GSE162780.<br/>
+Numerical data underlying the plots and the R codes used to generate them are in the folder _**Figures**_<br/>
 
 ## Analysis pipeline
 1. Sequence alignment
@@ -17,15 +18,21 @@ Raw sequencing data generated in this study are deposited deposited and availabl
 	* riboWaltz: https://github.com/LabTranslationalArchitectomics/riboWaltz
 	* Input:
 		* bam files from step 1 
-		* annotation file (***folder**/genedf_riboWaltz_v5_CDS_corrected.txt*)
+		* annotation file (***RData**/genedf_riboWaltz_v5_CDS_corrected.txt*)
 	* Output:
-		* ***folder**/(dataset)_reads_psite_list.Rdata* contains the following reads information: length of read, 5' & 3' ends + position of the read's P-site relative to the annotation provided in the annotation file. Distance from read's P-site to start and stop codons are calculated. The mRNA region (5'-UTR, CDS, or 3'-UTR) the P-site falls in is assigned.
-3. Read count by nucleotide (metagene analysis)
-	* [pending]
-4. Read count by region (Figure 3A)
-	* [pending]
-5. Random forest analyses
-	* [pending]
-6. Comparative analyses
-	* [pending]
-
+		* ***RData**/(dataset)_reads_psite_list.Rdata* contains the following reads information: length of read, 5' & 3' ends + position of the read's P-site relative to the annotation provided in the annotation file. Distance from read's P-site to start and stop codons are calculated. The mRNA region (5'-UTR, CDS, or 3'-UTR) the P-site falls in is assigned.
+3. Read count by mRNA region and readthrough efficiency calculation
+	* ***scripts**/rt_efficiency.R*
+	* Input: 
+		* reads_psite_list from step 2
+		* ***RData**/next_inframe_stop.txt*
+	* Output:
+		* ***RData**/rte_f0_cds_m3=33.Rdata*
+4. Random forest analyses
+	* ***scripts**/random_forest.Rmd*
+	* Input:
+		* mRNA features (***RData**/feature_file.csv*)
+		* Readthrough efficiency calculated for each gene from step 3 (***RData**/rte_f0_cds_m3=33.Rdata*)
+	* Output: 
+		* Model accuracy
+		* Feature importance
