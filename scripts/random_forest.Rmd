@@ -1,0 +1,188 @@
+---
+title: "Random Forest Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Random forest analysis
+
+```{r}
+library(data.table)
+library(dplyr)
+```
+
+## Data preparation
+mRNA features (X variables)
+```{r}
+feature_file <- read.csv(file = "./RData/feature_file.csv", header = TRUE)
+```
+
+Readthrough efficiency, readthrough groups (Y variables) combined with Features
+```{r}
+load("./RData/rte_f0_cds_m3=33.Rdata")
+```
+
+```{r Function}
+## Filter, log-transformed rte, split data into "High" and "Low" groups (Y variables), and combine with features
+# df: table containing readthrough efficiency and RPKM information. Final output from rt_efficiency.R
+# cds_rpkm_cutoff: transcripts with RPKM of the CDS less than the specified number will be discarded
+# utr3_rpkm_cutoff: transcripts with RPKM of the utr3_region less than the specified number will be discarded
+# group_param: for classification; a vector taking in 
+#               1) a mode to group transcripts to High and Low group by 
+#                   1. standard deviation ("std")
+#                   2. percentile ("percentile")
+#                   3. no grouping ("none")
+#               2) number associated with mode choice
+# feature_file: data table containing features (X variables) associated with each transcript
+# utr3_region: choices are full 3'-UTR lenght ("utr3) or extension ("ext")
+# logbase: base of log transform readthrough efficiency. Default is log2.
+
+prep <- function(df, cds_rpkm_cutoff = 5, utr3_rpkm_cutoff = 0.5, group_param = c("std", 1), feature_file, 
+                 utr3_region = "ext", logbase = 2) {
+  # 1. Filter out genes with no UTR annotations + overlapping genes
+  tokeep <- scan("../RData/reference_set_2693_genes.txt", character())
+  df <- df[df$transcript %in% tokeep, ] # 2693
+  # 2. Filter out un-analyzable rte
+  df <- df[df$rpkm_cds > cds_rpkm_cutoff & df[[paste0("rpkm_", utr3_region)]] > utr3_rpkm_cutoff, ]
+  # 3. log10-transformed readthrough efficiency
+  df$log_rte <- log(x = df[[paste0("rte_", utr3_region)]], base = logbase)
+  # 4. Break data into high and low readthrough efficiency groups
+  if (group_param[1] == "std") { # 4.1 Using standard deviation
+    message(paste0("Group genes using standard deviation of ", group_param[2]))
+    df$z <- data.table(scale(df$log_rte, center = TRUE, scale = TRUE))
+    std <- as.integer(group_param[2])
+    df <- data.table(df[z < -std | z > std, ])
+    df$Group <- df$z > std
+    df$Group <- gsub("FALSE", "Low", df$Group)
+    df$Group <- gsub("TRUE", "High", df$Group)
+  } else if (group_param[1] == "percentile") {  # 4.2 Using percentile
+    message(paste0("Group genes using top and bottom ", group_param[2]), "th percentile")
+    df$percentile <- data.table(dplyr::percent_rank(df$log_rte))
+    pt <- as.integer(group_param[2])/100
+    df <- data.table(df[percentile < pt | percentile > 1-pt])
+    df$Group <- df$percentile > pt
+    df$Group <- gsub("FALSE", "Low", df$Group)
+    df$Group <- gsub("TRUE", "High", df$Group)
+  } else if (group_param[1] == "none") {  # 4.3 No grouping
+    message("Data will not be grouped")
+  } else {
+    message("Invalid grouping parameter")
+  }
+  # 5. Combine data with feature_file
+  df <- data.table(left_join(df, feature_file[, -c(2:5)], by = "transcript"))
+  # 6. Convert any character variables to factor
+  df <- df %>% mutate_if(is.character, as.factor)
+  return(df)
+}
+```
+
+## Random forest
+```{r}
+library(randomForest)
+library(caret)
+```
+
+```{r Function}
+## Wrapper function to run random forest
+# data_list: list of data tables from prep function
+# sample_list: names of data tables in data_list desired for analysis
+# y_val: name of y variable to predict or classify; must match column names in feature_file
+# col_feature: vector containing desired features (X variables); must match column names in feature_file
+# ntree_: number of trees to grow in caret::train()
+# cv_fold: number of fold for cross-validation in caret::train()
+# met: metric to use to select optimal model in caret::train()
+# dummy: TRUE or FALSE, whether to make spread out categorical features with more than 2 levels
+# mtry_: number of features to subset to use for splitting the node; can be single number of a vector of numbers
+
+rfFit3 <- function(data_list, samp_list, y_val, col_feature, ntree_ = 500, cv_fold = 5, met = "Rsquared", dummy = FALSE, mtry_ = 9) {
+  Grid <- expand.grid(mtry = mtry_)
+  all.rfFit <- list()
+  for (i in 1:length(samp_list)) {
+    samp <- samp_list[i]
+    message(paste(samp, "\nStart"))
+    x_dat <- data_list[[samp]][, col_feature]
+    y_dat <- data_list[[samp]][, y_val]
+    dat <- data_list[[samp]][, c(y_val, col_feature)]
+    if (is.numeric(y_dat) == TRUE) {
+      train_control <- trainControl(method = "cv", number = cv_fold)
+    } else {
+      train_control <- trainControl(method = "cv", number = cv_fold, 
+                                    classProbs = TRUE, savePredictions = TRUE, summaryFunction = twoClassSummary)
+    }
+    if(dummy == FALSE) {
+      message("Dummy = False")
+      all.rfFit[[i]] <- train(x = x_dat, y = y_dat, method = "rf", data = dat, # same as randomForest
+                            trControl = train_control, importance = TRUE, metric = met, ntree = ntree_, tuneGrid = Grid)
+    } else {
+      message("Dummy = True")
+      f <- as.formula(paste(y_val, "~."))
+      all.rfFit[[i]] <- train(f, method = "rf", data = dat, # same as randomForest
+                            trControl = train_control, importance = TRUE, metric = met, ntree = ntree_, tuneGrid = Grid)
+    }
+    message("Done\n")
+  }
+  names(all.rfFit) <- samp_list
+  return(all.rfFit)
+}
+```
+
+```{r Column names for col_feature}
+all_col <- names(feature_file)
+feature_to_run <- c(all_col[grepl("tunnel", all_col)], "aa_m02", "aa_m01", all_col[grepl("nt_m", all_col)], "stop_codon", all_col[grepl("nt_p", all_col)], "nis_stop", "l_utr3", "MFE", "dist_bp", "random_factor", "random_num")
+feature_to_run
+```
+
+### Regression
+1. Prepare data
+```{r}
+f0_33_prep_reg <- lapply(f0_comp_re, prep, cds_rpkm_cutoff = 5, utr3_rpkm_cutoff = 0.5, group_param = "none", feature_file = feature_file, utr3_region = "ext")
+```
+2. Random forest
+```{r}
+set.seed(4930)
+f0_33_rf_reg <- rfFit3(data_list = f0_33_prep_reg, samp_list = names(f0_33_prep_reg), y_val = "log_rte", col_feature = feature_to_run, ntree_ = 100, cv_fold = 5, met = "RMSE", dummy = FALSE, mtry_ = seq(1, 81, 10))
+```
+3. Model accuracy
+```{r}
+nrmse <- lapply(f0_33_rf_reg, function(x) {xx <- x$resample[, "RMSE"] / (max(x$trainingData$.outcome)-min(x$trainingData$.outcome)); return(xx)})
+nrmse_meansd <- lapply(nrmse, function(x) {df <- data.frame(mean = mean(x), sd = sd(x))})
+nrmse_meansd <- bind_rows(nrmse_meansd, .id = "Sample")
+```
+4. Feature importance
+```{r}
+rf_reg_imp <- lapply(f0_33_rf_reg, function(x) {
+  imp <- as.data.frame(importance(x$finalModel))
+  imp$feature <- row.names(imp)
+  return(imp)
+  })
+rf_reg_imp_df <- bind_rows(rf_reg_imp, .id = "sample")
+```
+
+### Classification
+1. Prepare data
+```{r}
+f0_33_prep_group <- lapply(f0_comp_re, prep, cds_rpkm_cutoff = 5, utr3_rpkm_cutoff = 0.5, group_param = c("percentile", 15), feature_file = feature_file, utr3_region = "ext")
+```
+2. Random forest
+```{r}
+set.seed(2423)
+f0_33_rf_class <- rfFit3(data_list = f0_33_prep_group, samp_list = names(f0_33_prep_group), y_val = "Group", col_feature = feature_to_run, ntree_ = 100, cv_fold = 5, met = "ROC", dummy = FALSE, mtry_ = seq(1, 81, 10))
+```
+3. Model accuracy
+```{r}
+AUROC <- lapply(f0_33_rf_class, function(x) {xx <- x$resample[, "ROC"]; return(xx)})
+AUROC_meansd <- lapply(AUROC, function(x) {df <- data.frame(mean = mean(x), sd = sd(x))})
+AUROC_meansd <- bind_rows(AUROC_meansd, .id = "Sample")
+```
+4. Feature importance
+```{r}
+rf_class_imp <- lapply(f0_33_rf_class, function(x) {
+  imp <- as.data.frame(importance(x$finalModel))
+  imp$feature <- row.names(imp)
+  return(imp)
+  })
+rf_class_imp_df <- bind_rows(rf_class_imp, .id = "sample")
+```
