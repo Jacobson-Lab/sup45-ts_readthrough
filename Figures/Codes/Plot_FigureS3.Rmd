@@ -1,0 +1,180 @@
+---
+title: "Figure S3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(scales)
+library(gridExtra)
+library(grid)
+```
+
+1. Get isoforms.results files and average replicates
+```{r Function}
+ave_rep <- function(rep_paths, sample_name) {
+  df <- as.data.frame(matrix(nrow = 6952, ncol = length(rep_paths)))
+  for (i in 1:length(rep_paths)) {
+    tab <- read.table(rep_paths[i], header = TRUE)
+    df[, i] <- tab$FPKM
+  }
+  df <- transform(df, FPKM_ave = rowMeans(df, na.rm = TRUE))
+  df2 <- data.frame(transcript = tab$transcript_id, FPKM_ave = df$FPKM_ave)
+  df2$sample <- sample_name
+  return(df2)
+}
+```
+
+RNA-seq
+```{r}
+files <- list.files(path = "../../RSEM_results/RNA-Seq_RSEM/", pattern = "isoforms.results", full.names = TRUE)
+```
+```{r}
+ave_list <- list()
+ave_list$w25 <- ave_rep(rep_paths = files[grepl(pattern = ".*WT[A|B]25.*", files)], sample_name = "SUP45, 25°C")
+ave_list$w37 <- ave_rep(rep_paths = files[grepl(pattern = ".*WT[A|B]37.*", files)], sample_name = "SUP45, 37°C")
+ave_list$m25 <- ave_rep(rep_paths = files[grepl(pattern = ".*mut[A|B]25.*", files)], sample_name = "sup45-ts, 25°C")
+ave_list$m37 <- ave_rep(rep_paths = files[grepl(pattern = ".*mut[A|B]37.*", files)], sample_name = "sup45-ts, 37°C")
+ave_list$rli1 <- ave_rep(rep_paths = files[grepl(pattern = ".*SRR2046321.*", files)], sample_name = "RLI1-D")
+ave_list$rli1d <- ave_rep(rep_paths = files[grepl(pattern = ".*SRR2046322.*", files)], sample_name = "rli1-d")
+
+# Make NA for sup45-d data set because there is no RNA-seq data for them
+ave_list$sup <- ave_list$w25
+ave_list$sup[, c("FPKM_ave")] <- NA
+ave_list$supd <- ave_list$sup
+```
+
+Ribo-seq
+```{r}
+files <- list.files(path = "../../RSEM_results/Ribo-Seq_RSEM/", pattern = "isoforms.results", full.names = TRUE)
+```
+```{r}
+ave_list2 <- list()
+ave_list2$w25 <- ave_rep(rep_paths = files[grepl(pattern = ".*WT[A|B]25.*", files)], sample_name = "SUP45, 25°C")
+ave_list2$w37 <- ave_rep(rep_paths = files[grepl(pattern = ".*WT[A|B]37.*", files)], sample_name = "SUP45, 37°C")
+ave_list2$m25 <- ave_rep(rep_paths = files[grepl(pattern = ".*mut[A|B]25.*", files)], sample_name = "sup45-ts, 25°C")
+ave_list2$m37 <- ave_rep(rep_paths = files[grepl(pattern = ".*mut[A|B]37.*", files)], sample_name = "sup45-ts, 37°C")
+ave_list2$sup <- ave_rep(rep_paths = files[grepl(pattern = ".*90[3|4].*", files)], sample_name = "SUP45-D")
+ave_list2$supd <- ave_rep(rep_paths = files[grepl(pattern = ".*90[8|9].*", files)], sample_name = "sup45-d")
+ave_list2$rli1 <- ave_rep(rep_paths = files[grepl(pattern = ".*309|310.*", files)], sample_name = "RLI1-D")
+ave_list2$rli1d <- ave_rep(rep_paths = files[grepl(pattern = ".31[1|2|9]", files)], sample_name = "rli1-d")
+```
+
+2. Calculate translation efficiency
+```{r}
+ave_list3 <- list()
+samp <- names(ave_list2)
+for (i in 1:length(samp)) {
+  ave_list3[[samp[i]]] <- data.frame(sample =  ave_list[[samp[i]]]$sample, transcript = ave_list[[samp[i]]]$transcript,
+                                     rpkm_rnaseq = ave_list[[samp[i]]]$FPKM_ave, rpkm_riboseq = ave_list2[[samp[i]]]$FPKM_ave)
+  ave_list3[[samp[i]]]$TE <- log10(ave_list3[[samp[i]]]$rpkm_riboseq/ave_list3[[samp[i]]]$rpkm_rnaseq)
+}
+```
+
+3. Load readthrough efficiency and mRNA features information
+```{r}
+load("../../RData/rte_f0_cds_m3=33.Rdata") # readthrough efficiency
+feature_file <- data.table(read.csv("../../RData/feature_file.csv", header = TRUE)) # mRNA features
+```
+
+4. Filter data to include only 2693 genes with UTR annotations and non-overlapping + choose desired mRNA features
+```{r}
+tokeep <- scan("../../RData/reference_set_2693_genes.txt", character())
+ann <- feature_file[which(feature_file$transcript %in% tokeep), c("transcript", "l_tr", "l_utr5", "l_cds", "l_utr3", "tAI_cds")]
+```
+
+5. Combine data
+```{r}
+annl <- list()
+annl$w25 <- left_join(ann, f0_comp_re$sup45_wt_25C[, c("transcript", "rte_ext", "rpkm_cds", "rpkm_ext")], by = "transcript")
+annl$w37 <- left_join(ann, f0_comp_re$sup45_wt_37C[, c("transcript", "rte_ext", "rpkm_cds", "rpkm_ext")], by = "transcript")
+annl$m25 <- left_join(ann, f0_comp_re$sup45_2_25C[, c("transcript", "rte_ext", "rpkm_cds", "rpkm_ext")], by = "transcript")
+annl$m37 <- left_join(ann, f0_comp_re$sup45_2_37C[, c("transcript", "rte_ext", "rpkm_cds", "rpkm_ext")], by = "transcript")
+annl$sup <- left_join(ann, f0_comp_re$sup45_wt[, c("transcript", "rte_ext", "rpkm_cds", "rpkm_ext")], by = "transcript")
+annl$supd <- left_join(ann, f0_comp_re$sup45_d[, c("transcript", "rte_ext", "rpkm_cds", "rpkm_ext")], by = "transcript")
+annl$rli1 <- left_join(ann, f0_comp_re$rli1_wt[, c("transcript", "rte_ext", "rpkm_cds", "rpkm_ext")], by = "transcript")
+annl$rli1d <- left_join(ann, f0_comp_re$rli1_d[, c("transcript", "rte_ext", "rpkm_cds", "rpkm_ext")], by = "transcript")
+```
+```{r}
+annl$w25 <- left_join(annl$w25, ave_list3$w25, by = "transcript")
+annl$w37 <- left_join(annl$w37, ave_list3$w37, by = "transcript")
+annl$m25 <- left_join(annl$m25, ave_list3$m25, by = "transcript")
+annl$m37 <- left_join(annl$m37, ave_list3$m37, by = "transcript")
+annl$sup <- left_join(annl$sup, ave_list3$sup, by = "transcript")
+annl$supd <- left_join(annl$supd, ave_list3$supd, by = "transcript")
+annl$rli1 <- left_join(annl$rli1, ave_list3$rli1, by = "transcript")
+annl$rli1d <- left_join(annl$rli1d, ave_list3$rli1d, by = "transcript")
+```
+
+6. Log-transformation
+```{r}
+for (i in 1:8) {
+  annl[[i]]$log_rte <- log2(annl[[i]]$rte_ext)
+  annl[[i]]$log_rpkm_rnaseq <- log10(annl[[i]]$rpkm_rnaseq)
+  annl[[i]]$log_rpkm_riboseq <- log10(annl[[i]]$rpkm_riboseq)
+  annl[[i]]$log_rpkm_cds <- log10(annl[[i]]$rpkm_cds)
+  annl[[i]]$log_rpkm_ext <- log10(annl[[i]]$rpkm_ext)
+}
+```
+
+7. Correlation matrix
+```{r}
+for (i in 1:8) {
+  annl[[i]] <- annl[[i]][annl[[i]]$rpkm_cds > 5 & annl[[i]]$rpkm_ext > 0.5, ]
+}
+```
+```{r Function}
+# Function to set half of correlation matrix (duplicate information) to NA
+# from http://www.sthda.com/english/wiki/ggplot2-quick-correlation-matrix-heatmap-r-software-and-data-visualization
+get_upper_tri <- function(cormat){
+  cormat[lower.tri(cormat)]<- NA
+  return(cormat)
+}
+```
+```{r}
+cor_l <- list()
+for (i in 1:8) {
+  res <- cor(annl[[i]][, c("log_rte", "log_rpkm_rnaseq", "TE", "l_tr", "l_utr5", "l_cds", "l_utr3", "tAI_cds")], 
+             method = "spearman", use = "pairwise.complete.obs")
+  res <- get_upper_tri(res)
+  cor_l[[i]] <- melt(res)
+}
+```
+
+8. Plot
+```{r}
+names(cor_l) <- names(annl)
+cor_df <- bind_rows(cor_l, .id = "sample")
+cor_df$sample <- recode_factor(cor_df$sample, w25 = "SUP45, 25°C", w37 = "SUP45, 37°C", sup = "SUP45-D", rli1 = "RLI1-D",
+                               m25 = "sup45-ts, 25°C", m37 = "sup45-ts, 37°C", supd = "sup45-d", rli1d = "rli1-d")
+cor_df$Var1 <- recode_factor(as.factor(cor_df$Var1), log_rte = "Readthrough efficiency", log_rpkm_rnaseq = "Gene expression (RNA-seq)", 
+                             TE = "Translation efficiency", 
+                             l_tr = "Transcript length", l_utr5 = "5'-UTR length", l_cds = "CDS length", l_utr3 = "3'-UTR length",
+                             tAI_cds = "Codon optimality")
+cor_df$Var2 <- recode_factor(as.factor(cor_df$Var2), log_rte = "Readthrough efficiency", log_rpkm_rnaseq = "Gene expression (RNA-seq)", 
+                             TE = "Translation efficiency", 
+                             l_tr = "Transcript length", l_utr5 = "5'-UTR length", l_cds = "CDS length", l_utr3 = "3'-UTR length",
+                             tAI_cds = "Codon optimality")
+```
+```{r}
+ggplot(cor_df) +
+  geom_tile(aes(x = Var1, y = reorder(Var2, desc(Var2)), fill = value, height = 0.9, width = 0.9), color = NA) +
+  facet_wrap(~sample, nrow = 2) +
+  scale_fill_gradient2(name = bquote(rho), low = "blue", mid = "white", high = "red", midpoint = 0, na.value = NA, limits = c(-1, 1)) +
+  xlab("") + ylab("") +
+  geom_text(aes(x = Var1, y = Var2, label = round(value, 2)), color = "black", size = 1.5) +
+  theme_bw(base_size = 8) + 
+  theme(panel.grid = element_blank(), strip.background = element_rect(fill = "white"), strip.text = element_text(face = "italic"), 
+        legend.position = "top", legend.key.height = unit(0.25, "cm"), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), 
+        aspect.ratio = 1)
+```
+```{r}
+ggsave(filename = "FigureS3.pdf", plot = last_plot(), height = 5, width = 7, unit = "in", dpi = 500, path = "../Plots/")
+```
