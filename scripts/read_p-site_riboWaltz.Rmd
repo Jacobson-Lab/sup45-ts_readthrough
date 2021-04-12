@@ -1,0 +1,69 @@
+---
+title: "Read P-site assignment"
+author: "Kotchaphorn Mangkalaphiban"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Read P-site assignment using riboWaltz
+
+```{r}
+library(riboWaltz)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+```
+
+Load annotation file
+```{r}
+annotation_file <- data.table(read.table("./RData/genedf_riboWaltz_v5_CDS_corrected.txt", header = TRUE))
+```
+
+Load bam files
+```{r}
+dir <- "./path_to_folder_containing_bam_files"
+reads_list <- bamtolist(bamfolder = dir, annotation = annotation_file)
+```
+
+Plot readlength distribution and filter desired lengths for next step
+```{r}
+for (i in 1:length(reads_list)) {
+  fname <- names(reads_list)[i]
+  rd <- rlength_distr(reads_list, sample = fname, cl = 100)
+  ggsave(filename = paste0("rlength_dist_plot_", fname, ".pdf"), plot = rd$plot, height = 4, width = 6, units = "in", dpi = 500, path = dir)
+  write.table(rd$dt, file = paste0(dir, "rlength_dist_dt_", fname, ".txt"), sep = "\t", row.names = FALSE, col.names = TRUE)
+}
+```
+```{r}
+sublist <- length_filter(data = reads_list, length_filter_mode = "custom", length_filter_vector = c(20:23, 27:32))
+```
+
+Determine P-site offset for each read length
+```{r}
+psite_offset <- psite(reads_list, flanking = 6, extremity = "3end", plot = TRUE, cl = 100, plot_dir = dir)
+```
+(Adjusted offsets were saved as txt files.)
+
+Calculate P-site position for each read
+```{r}
+# Calculate P-site position
+psite_offset_adj <- data.table(read.table("./RData/sup45-ts_psite_offset_adj.txt", header = TRUE))
+reads_psite_list <- psite_info(sublist, psite_offset_adj)
+
+# Calculate reading frame based on P-site position from start codon
+for (i in 1:length(reads_psite_list)) {
+  reads_psite_list[[i]][["frame"]] <- reads_psite_list[[i]][["psite_from_start"]] %% 3
+}
+```
+
+Metagene plot
+```{r}
+trans <- scan("./RData/reference_set_2693_genes.txt", character())
+sample_name <- names(reads_psite_list)[1]
+metaprofile_all <- metaprofile_psite(reads_psite_list, annotation = annotation_file, sample = sample_name, transcripts = trans,
+                                     length_range = "all", utr5l = 20, cdsl = 40, utr3l = 80, plot_title = sample_name)
+# metaprofiling_all[[1]] is the basis for Figure 1A-D
+```
