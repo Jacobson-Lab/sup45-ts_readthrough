@@ -1,5 +1,5 @@
 # ---------------------------------------
-# Figure 6C
+# Figure 7C
 # ---------------------------------------
 # Table key:
 ## sample = sample
@@ -16,12 +16,12 @@
 library(ggplot2)
 library(ggpubr)
 
-df_all <- read.table("../Data/Data_Figure6C_All.txt", header = TRUE)
+df_all <- read.table("../Data/Data_Figure7C_All.txt", header = TRUE)
 df_all$sample <- factor(df_all$sample, levels = unique(df_all$sample)[c(1, 2, 5, 7, 3, 4, 6, 8)])
 df_all$aa <- factor(df_all$aa, levels = c("F", "S", "Y", "*", "C", "W", "L", "P", "H", "Q", "R", "I", "M", "T", "N", "K", "V", "A", "D", "E", "G"))
 
 # Plot
-f6c <- ggplot(df_all) +
+f7c <- ggplot(df_all) +
   geom_tile(aes(x = Var1, y = reorder(sample, desc(sample)), fill = value, height = p_hw, width = p_hw)) +
   facet_grid(Var2~aa, scales = "free_x", space = "free") +
   scale_fill_gradient2(low = "blue" , mid = "white", high = "red", midpoint = 0, na.value = "grey70",
@@ -34,4 +34,4 @@ f6c <- ggplot(df_all) +
         axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 # Save plot
-ggsave(filename = "Figure6C.pdf", plot = f6c, path = "../Plots", height = 3.5, width = 7, units = "in", dpi = 500)
+ggsave(filename = "Figure7C.pdf", plot = f7c, path = "../Plots", height = 3.5, width = 7, units = "in", dpi = 500)
