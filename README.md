@@ -1,6 +1,6 @@
 # sup45-ts_readthrough
-Analysis pipeline, codes, and processed data for Mangkalaphiban et al.<br/>
-DOI: [pending]<br/>
+Analysis pipeline, codes, and processed data for Mangkalaphiban et al., PLoS Genetics, 2021<br/>
+DOI: https://doi.org/10.1371/journal.pgen.1009538<br/>
 Preprint: https://doi.org/10.1101/2020.12.15.422930<br/>
 
 Raw sequencing data generated in this study are deposited and available at Gene Expression Omnibus (GEO) under accession number GSE162780.<br/>
